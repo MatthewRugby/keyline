@@ -876,7 +876,7 @@ hr.div{border:none;border-top:1px solid var(--line);margin:22px 0;}
       <div style="max-width:600px;">
         <div class="eyebrow">Configuration</div>
         <h1 class="h-section" style="font-size:26px;">API Key Setup</h1>
-        <p class="sub" style="margin-bottom:22px;">To use Keyline's AI features, you need an Anthropic API key. It's free to get, and your key is stored safely in your browser.</p>
+        <p class="sub" style="margin-bottom:22px;">To use Keyline's AI features, you need a Google Gemini API key. It's free to get, and your key is stored safely in your browser.</p>
 
         <div class="card card-pad">
           <div style="background:var(--amber-tint);border:1px solid var(--amber);border-radius:10px;padding:14px;margin-bottom:20px;">
@@ -885,10 +885,10 @@ hr.div{border:none;border-top:1px solid var(--line);margin:22px 0;}
           </div>
 
           <div class="field">
-            <label for="apiKeyInput">Anthropic API Key</label>
-            <input type="password" class="input" id="apiKeyInput" placeholder="sk-ant-v7-..." style="font-family:var(--font-mono);font-size:12px;">
+            <label for="apiKeyInput">Google Gemini API Key</label>
+            <input type="password" class="input" id="apiKeyInput" placeholder="AIza..." style="font-family:var(--font-mono);font-size:12px;">
             <div class="field-hint">
-              Don't have one? <a href="https://console.anthropic.com/account/keys" target="_blank" style="color:var(--indigo);font-weight:600;">Get your free API key here</a> (1 min)
+              Don't have one? <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--indigo);font-weight:600;">Get your free Gemini API key here</a> (1 min)
             </div>
           </div>
 
@@ -908,9 +908,9 @@ hr.div{border:none;border-top:1px solid var(--line);margin:22px 0;}
           <div class="eyebrow">How it works</div>
           <ul style="padding-left:18px;margin-top:8px;font-size:13px;line-height:1.7;color:var(--ink-soft);">
             <li>Your API key is stored <strong>only in your browser</strong> — never sent to our servers</li>
-            <li>You're billed directly by Anthropic based on usage (very cheap — ~$0.01 per resume)</li>
-            <li>Safe to use; you control when the key is revoked</li>
-            <li>Free tier available: $5 credit to start</li>
+            <li>You're billed directly by Google based on usage (very cheap — ~$0.001-0.005 per resume)</li>
+            <li>Free tier available: $300 credit for first 90 days</li>
+            <li>Safe to use; you control when the key is revoked at console.cloud.google.com</li>
           </ul>
         </div>
 
@@ -1082,7 +1082,7 @@ document.getElementById('showKeyToggle').addEventListener('change', e=>{
 document.getElementById('saveApiKeyBtn').addEventListener('click', ()=>{
   const key = document.getElementById('apiKeyInput').value.trim();
   if(!key){ showToast('Please enter an API key.','error'); return; }
-  if(!key.startsWith('sk-ant-')){ showToast('API key should start with sk-ant-','error'); return; }
+  if(!key.startsWith('AIza')){ showToast('API key should start with AIza','error'); return; }
   localStorage.setItem('anthropic_api_key', key);
   const status = document.getElementById('keyStatus');
   status.style.display = 'block';
@@ -1113,38 +1113,57 @@ document.getElementById('themeToggle').addEventListener('click', ()=>{
 async function callClaude(system, userMsg){
   const apiKey = localStorage.getItem('anthropic_api_key');
   if(!apiKey || apiKey.trim() === ''){
-    showToast('⚠️ API key needed. Go to Settings to add your Anthropic API key.','error');
+    showToast('⚠️ API key needed. Go to Settings to add your Google Gemini API key.','error');
     navigateTo('settings');
     throw new Error('No API key');
   }
   
   try{
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    // Gemini API endpoint
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    
+    const resp = await fetch(endpoint, {
       method:'POST',
       headers:{
-        'Content-Type':'application/json',
-        'x-api-key': apiKey
+        'Content-Type':'application/json'
       },
       body: JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        system: system,
-        messages:[{role:'user', content:userMsg}]
+        system_instruction: {
+          parts: [{text: system}]
+        },
+        contents: [{
+          role: 'user',
+          parts: [{text: userMsg}]
+        }],
+        generationConfig: {
+          maxOutputTokens: 1000,
+          temperature: 0.7
+        }
       })
     });
     
     if(!resp.ok){
       const errData = await resp.json().catch(()=>({}));
-      if(resp.status === 401){
-        throw new Error('Invalid API key. Check console for details. (401)');
+      if(resp.status === 400){
+        throw new Error('Invalid request. Check your prompt format.');
+      }
+      if(resp.status === 403){
+        throw new Error('Invalid API key. Check your Gemini API key.');
       }
       throw new Error('API error: '+resp.status);
     }
     
     const data = await resp.json();
-    return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    
+    // Extract text from Gemini response
+    if(data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts){
+      const text = data.candidates[0].content.parts.map(p=>p.text).join('\n');
+      return text;
+    }
+    
+    throw new Error('Unexpected response format from Gemini');
   }catch(e){
-    console.error('Claude API error:', e);
+    console.error('Gemini API error:', e);
     throw e;
   }
 }
